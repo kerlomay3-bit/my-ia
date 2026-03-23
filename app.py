@@ -4,86 +4,76 @@ from flask import Flask, render_template, request, jsonify, session, redirect, u
 from groq import Groq
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("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", "une_cle_au_hasard_123")
+app.secret_key = os.environ.get("SECRET_KEY", "dev_key_123")
 
-# Récupère la clé API depuis les variables d'environnement de Render
+# Récupération de la clé API
 API_KEY = os.environ.get("GROQ_API_KEY")
 client = Groq(api_key=API_KEY)
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        # Change "1234" par ton mot de passe voulu
         if request.form.get('password') == "1234":
             session['logged_in'] = True
             return redirect(url_for('index'))
-    return '''
-    <body style="background:#343541; color:white; display:flex; justify-content:center; align-items:center; height:100vh; font-family:sans-serif;">
-        <form method="post" style="background:#40414f; padding:20px; border-radius:10px;">
-            <h2>Connexion IA</h2>
-            <input type="password" name="password" placeholder="Mot de passe" style="padding:10px; border-radius:5px; border:none;"><br><br>
-            <button type="submit" style="width:100%; padding:10px; background:#10a37f; color:white; border:none; border-radius:5px; cursor:pointer;">Entrer</button>
-        </form>
-    </body>
-    '''
+    return '''<body style="background:#1e1e2e; color:white; display:flex; justify-content:center; align-items:center; height:100vh; font-family:sans-serif;"><form method="post"><input type="password" name="password" placeholder="Pass: 1234" style="padding:10px;"><button type="submit">Entrer</button></form></body>'''
 
 @app.route('/')
 def index():
-    if not session.get('logged_in'):
-        return redirect(url_for('login'))
+    if not session.get('logged_in'): return redirect(url_for('login'))
     return render_template('index.html')
 
 @app.route('/chat', methods=['POST'])
 def chat():
-    if not session.get('logged_in'):
-        return jsonify({"error": "Non autorisé"}), 401
+    if not session.get('logged_in'): return jsonify({"error": "Unauthorized"}), 401
     
     try:
         user_message = request.form.get("message")
         image = request.files.get('image')
 
-        # GESTION DE LA MÉMOIRE (Stockée dans la session du navigateur)
-        if 'chat_history' not in session:
-            session['chat_history'] = [{"role": "system", "content": "Tu es un assistant IA intelligent."}]
+        # Mémoire simple via session
+        if 'history' not in session:
+            session['history'] = []
         
-        history = session['chat_history']
-
+        # Préparation du contenu du message
         content = []
         if user_message:
             content.append({"type": "text", "text": user_message})
         
         if image:
-            # Traitement de l'image pour Groq Vision
-            b64_image = base64.b64encode(image.read()).decode('utf-8')
-            content.append({
-                "type": "image_url",
-                "image_url": {"url": f"data:image/jpeg;base64,{b64_image}"}
-            })
+            b64 = base64.b64encode(image.read()).decode('utf-8')
+            content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}})
 
-        history.append({"role": "user", "content": content})
+        if not content:
+            return jsonify({"error": "Vide"}), 400
 
-        # Appel au modèle VISION (Llama 3.2)
+        # On ajoute le message utilisateur à l'historique
+        session['history'].append({"role": "user", "content": content})
+
+        # Appel Groq - Syntaxe Corrigée
         completion = client.chat.completions.create(
             model="llama-3.2-11b-vision-preview",
-            messages=history,
+            messages=session['history'],
             max_tokens=1024
         )
         
-        response_text = completion.choices[0].message.content
+        # Extraction de la réponse (L'erreur venait souvent d'ici)
+        reponse = completion.choices[0].message.content
         
-        # On ajoute la réponse à l'historique
-        history.append({"role": "assistant", "content": response_text})
+        # Sauvegarde de la réponse IA dans l'historique
+        session['history'].append({"role": "assistant", "content": reponse})
         
-        # On limite l'historique aux 15 derniers messages pour ne pas saturer la session
-        session['chat_history'] = history[-15:]
+        # Limiter la mémoire pour éviter les bugs de session trop lourde
+        if len(session['history']) > 10:
+            session['history'] = session['history'][-10:]
+            
         session.modified = True
-
-        return jsonify({"response": response_text})
+        return jsonify({"response": reponse})
     
     except Exception as e:
+        print(f"DEBUG ERROR: {str(e)}") # Visible dans les logs Render
         return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
-    # Render définit automatiquement la variable PORT
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
