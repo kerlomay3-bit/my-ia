@@ -8,7 +8,7 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "ma_cle_secrete_fixe_123")
 
 # Initialisation du client Groq
-API_KEY = os.environ.get("GROQ_API_KEY")
+API_KEY = os.environ.get("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")
 client = Groq(api_key=API_KEY)
 
 @app.route('/login', methods=['GET', 'POST'])
