@@ -4,9 +4,9 @@ from flask import Flask, render_template, request, jsonify, session, redirect, u
 from groq import Groq
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "dev_key_123")
+app.secret_key = os.environ.get("SECRET_KEY", "cle_securisee_123")
 
-# Récupération de la clé API
+# Initialisation du client Groq
 API_KEY = os.environ.get("GROQ_API_KEY")
 client = Groq(api_key=API_KEY)
 
@@ -16,7 +16,7 @@ def login():
         if request.form.get('password') == "1234":
             session['logged_in'] = True
             return redirect(url_for('index'))
-    return '''<body style="background:#1e1e2e; color:white; display:flex; justify-content:center; align-items:center; height:100vh; font-family:sans-serif;"><form method="post"><input type="password" name="password" placeholder="Pass: 1234" style="padding:10px;"><button type="submit">Entrer</button></form></body>'''
+    return '''<body style="background:#1e1e2e; color:white; display:flex; justify-content:center; align-items:center; height:100vh; font-family:sans-serif;"><form method="post" style="background:#2a2b32; padding:20px; border-radius:10px;"><h2>Accès IA</h2><input type="password" name="password" placeholder="Code: 1234" style="padding:10px; border-radius:5px; border:none;"><br><br><button type="submit" style="width:100%; background:#10a37f; color:white; border:none; padding:10px; cursor:pointer;">Entrer</button></form></body>'''
 
 @app.route('/')
 def index():
@@ -25,54 +25,58 @@ def index():
 
 @app.route('/chat', methods=['POST'])
 def chat():
-    if not session.get('logged_in'): return jsonify({"error": "Unauthorized"}), 401
+    if not session.get('logged_in'): return jsonify({"error": "Forbidden"}), 403
     
     try:
         user_message = request.form.get("message")
         image = request.files.get('image')
 
-        # Mémoire simple via session
+        # Initialiser l'historique si vide
         if 'history' not in session:
             session['history'] = []
         
-        # Préparation du contenu du message
-        content = []
+        # On ne garde que le texte dans l'historique session (pour éviter que ça soit trop lourd)
+        current_msg = {"role": "user", "content": user_message if user_message else "Image envoyée"}
+        
+        # Préparation de l'envoi à Groq (Texte + Image Base64)
+        groq_messages = []
+        # On ajoute le passé (en format simple pour Groq)
+        for h in session['history']:
+            groq_messages.append({"role": h["role"], "content": h["content"]})
+            
+        # On ajoute le message actuel
+        current_content = []
         if user_message:
-            content.append({"type": "text", "text": user_message})
+            current_content.append({"type": "text", "text": user_message})
         
         if image:
-            b64 = base64.b64encode(image.read()).decode('utf-8')
-            content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}})
+            b64_img = base64.b64encode(image.read()).decode('utf-8')
+            current_content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64_img}"}})
+        
+        groq_messages.append({"role": "user", "content": current_content})
 
-        if not content:
-            return jsonify({"error": "Vide"}), 400
-
-        # On ajoute le message utilisateur à l'historique
-        session['history'].append({"role": "user", "content": content})
-
-        # Appel Groq - Syntaxe Corrigée
+        # Appel API
         completion = client.chat.completions.create(
             model="llama-3.2-11b-vision-preview",
-            messages=session['history'],
+            messages=groq_messages,
             max_tokens=1024
         )
         
-        # Extraction de la réponse (L'erreur venait souvent d'ici)
         reponse = completion.choices[0].message.content
         
-        # Sauvegarde de la réponse IA dans l'historique
+        # Sauvegarde dans la mémoire (texte uniquement pour la légèreté)
+        session['history'].append({"role": "user", "content": user_message if user_message else ""})
         session['history'].append({"role": "assistant", "content": reponse})
         
-        # Limiter la mémoire pour éviter les bugs de session trop lourde
-        if len(session['history']) > 10:
-            session['history'] = session['history'][-10:]
-            
+        # On garde les 6 derniers échanges
+        session['history'] = session['history'][-12:]
         session.modified = True
+
         return jsonify({"response": reponse})
     
     except Exception as e:
-        print(f"DEBUG ERROR: {str(e)}") # Visible dans les logs Render
-        return jsonify({"error": str(e)}), 500
+        print(f"ERREUR LOG: {str(e)}") # Vérifie tes logs Render si ça persiste
+        return jsonify({"error": "Erreur serveur"}), 500
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
