@@ -4,7 +4,7 @@ from flask import Flask, render_template, request, jsonify, session, redirect, u
 from groq import Groq
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "une_cle_au_hasard_123")
+app.secret_key = os.environ.get("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", "une_cle_au_hasard_123")
 
 # Récupère la clé API depuis les variables d'environnement de Render
 API_KEY = os.environ.get("GROQ_API_KEY")
