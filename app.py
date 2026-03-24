@@ -4,10 +4,13 @@ from flask import Flask, render_template, request, jsonify, session, redirect, u
 from groq import Groq
 
 app = Flask(__name__)
-app.secret_key = "cle_de_test_123"
+app.secret_key = "cle_fixe_pour_render_123"
 
-# Connexion directe à Groq
-client = Groq(api_key="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")
+# ON MET LA CLÉ ICI DIRECTEMENT POUR ÉVITER L'ERREUR RENDER
+try:
+    client = Groq(api_key="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")
+except Exception as e:
+    client = None
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -15,7 +18,7 @@ def login():
         if request.form.get('password') == "1234":
             session['logged_in'] = True
             return redirect(url_for('index'))
-    return '<body style="background:#1e1e2e;color:white;display:flex;justify-content:center;align-items:center;height:100vh;"><form method="post"><h2>Code: 1234</h2><input type="password" name="password"><button type="submit">Entrer</button></form></body>'
+    return '<body style="background:#1e1e2e;color:white;display:flex;justify-content:center;align-items:center;height:100vh;font-family:sans-serif;"><form method="post" style="background:#2a2b32;padding:20px;border-radius:10px;"><h2>Code: 1234</h2><input type="password" name="password" style="padding:10px;"><br><br><button type="submit" style="width:100%;padding:10px;background:#10a37f;color:white;border:none;cursor:pointer;">Entrer</button></form></body>'
 
 @app.route('/')
 def index():
@@ -25,35 +28,23 @@ def index():
 @app.route('/chat', methods=['POST'])
 def chat():
     if not session.get('logged_in'): return jsonify({"error": "Auth"}), 403
-    
     try:
         user_text = request.form.get("message")
         user_image = request.files.get('image')
-
-        # Préparation du contenu
-        message_content = []
-        if user_text:
-            message_content.append({"type": "text", "text": user_text})
         
+        content = []
+        if user_text: content.append({"type": "text", "text": user_text})
         if user_image:
-            # On lit l'image et on l'encode
-            image_data = base64.b64encode(user_image.read()).decode('utf-8')
-            message_content.append({
-                "type": "image_url",
-                "image_url": {"url": f"data:image/jpeg;base64,{image_data}"}
-            })
-
-        # Appel Groq (Modèle Vision)
+            b64 = base64.b64encode(user_image.read()).decode('utf-8')
+            content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}})
+        
+        # Appel direct sans historique complexe pour tester
         completion = client.chat.completions.create(
             model="llama-3.2-11b-vision-preview",
-            messages=[{"role": "user", "content": message_content}]
+            messages=[{"role": "user", "content": content}]
         )
-        
-        # Récupération de la réponse
         return jsonify({"response": completion.choices[0].message.content})
-    
     except Exception as e:
-        print(f"CRASH LOG: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
